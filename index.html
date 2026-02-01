@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新生實習體檢智能導航</title>
+    
+    <!-- 引入 React 與 ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- 引入 Babel 用於解析 JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        /* 簡單的動畫樣式 */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .animate-in {
+            animation: fadeIn 0.2s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState } = React;
+
+        // --- Icons Components (由於是單一檔案，我們將 Icon 直接寫在這邊) ---
+        const IconBase = ({ children, className, ...props }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+                {children}
+            </svg>
+        );
+
+        const Shield = (props) => <IconBase {...props}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></IconBase>;
+        const Activity = (props) => <IconBase {...props}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></IconBase>;
+        const FileText = (props) => <IconBase {...props}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /></IconBase>;
+        const Syringe = (props) => <IconBase {...props}><path d="m18 2 4 4" /><path d="m17 7 3-3" /><path d="M19 9 8.7 19.3c-1 1-2.5 1-3.4 0l-.6-.6c-1-1-1-2.5 0-3.4L15 5" /><path d="m9 11 4 4" /><path d="m5 19-3 3" /><path d="m14 4 6 6" /></IconBase>;
+        const CheckCircle = (props) => <IconBase {...props}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></IconBase>;
+        const AlertCircle = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></IconBase>;
+        const HelpCircle = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></IconBase>;
+        const ChevronRight = (props) => <IconBase {...props}><polyline points="9 18 15 12 9 6" /></IconBase>;
+        const RefreshCcw = (props) => <IconBase {...props}><path d="M3 2v6h6" /><path d="M21 12A9 9 0 0 0 6 5.3L3 8" /><path d="M21 22v-6h-6" /><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7" /></IconBase>;
+        const Info = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></IconBase>;
+        const Thermometer = (props) => <IconBase {...props}><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" /></IconBase>;
+        const Baby = (props) => <IconBase {...props}><path d="M9 12h.01" /><path d="M15 12h.01" /><path d="M10 16c.5.3 1.2.5 2 .5s1.5-.2 2-.5" /><path d="M19 6.3a9 9 0 0 1 1.8 3.9 2 2 0 0 1 0 3.8 9 9 0 0 1-17.6 0 2 2 0 0 1 0-3.8A9 9 0 0 1 19 6.3z" /></IconBase>;
+        const QrCode = (props) => <IconBase {...props}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><path d="M3 14h7v7H3z" /></IconBase>;
+
+        // --- Main Component ---
+        const HealthCheckGuide = () => {
+            const [currentStep, setCurrentStep] = useState('home');
+            const [results, setResults] = useState({});
+            const [activeCategory, setActiveCategory] = useState(null);
+            const [interaction, setInteraction] = useState(null);
+
+            // 定義體檢項目的邏輯樹
+            const categories = [
+                {
+                    id: 'hepb',
+                    title: '1. B型肝炎 (Hepatitis B)',
+                    icon: <Activity className="w-6 h-6 text-blue-600" />,
+                    description: '規定：需檢驗表面抗原與抗體。若皆為陰性，應接種疫苗並檢附證明。',
+                    color: 'bg-blue-50 border-blue-200',
+                    logic: [
+                        {
+                            id: 'q1',
+                            text: '請問您的 B型肝炎檢驗報告結果為何？',
+                            subtext: '需包含 HBsAg (抗原) 與 Anti-HBs (抗體)',
+                            options: [
+                                { label: '抗體 (Anti-HBs) 為陽性 (+)', next: 'result_pass', type: 'success' },
+                                { label: '抗原與抗體「皆為陰性 (-)」', next: 'result_action_vax', type: 'warning' },
+                                { label: '抗原 (HBsAg) 為陽性 (+)', next: 'result_carrier', type: 'warning' },
+                                { label: '我還沒有檢驗報告', next: 'result_check', type: 'neutral' }
+                            ]
+                        }
+                    ],
+                    outcomes: {
+                        result_pass: {
+                            status: 'pass',
+                            title: '✅ 符合規定',
+                            desc: '請影印該份檢驗報告 (抗體陽性) 繳交。'
+                        },
+                        result_action_vax: {
+                            status: 'action',
+                            title: '💉 需打疫苗並回測抗體',
+                            desc: '因抗原與抗體皆為陰性，依規定應接受 B 型肝炎疫苗注射。請於「完成疫苗注射 1 個月後」，需抽血檢驗 B 肝抗體，並一併繳交「疫苗施打證明」與「抗體檢驗報告」。'
+                        },
+                        result_carrier: {
+                            status: 'pass',
+                            title: '✅ 請繳交檢驗報告',
+                            desc: '您為 B 肝帶原者 (抗原陽性)，請直接影印並繳交該份檢驗報告即可。'
+                        },
+                        result_check: {
+                            status: 'test',
+                            title: '🩸 需提供醫院抽血報告',
+                            desc: '請至醫院進行抽血檢驗，報告需包含「B型肝炎表面抗原」與「B型肝炎表面抗體」，並繳交該份報告。'
+                        }
+                    }
+                },
+                {
+                    id: 'chickenpox',
+                    title: '2. 水痘 (Varicella)',
+                    icon: <CheckCircle className="w-6 h-6 text-teal-600" />,
+                    description: '規定：水痘檢驗 (抗體) 或是 接種紀錄。',
+                    color: 'bg-teal-50 border-teal-200',
+                    logic: [
+                        {
+                            id: 'q1',
+                            text: '請問您是否有水痘的「檢驗報告」或「接種紀錄」？',
+                            subtext: '兩者擇一即可',
+                            options: [
+                                { label: '有，我有抗體陽性報告', next: 'result_pass_antibody', type: 'success' },
+                                { label: '有，我有疫苗接種紀錄', next: 'result_pass_vax', type: 'success' },
+                                { label: '都沒有 / 抗體陰性', next: 'result_action', type: 'warning' }
+                            ]
+                        }
+                    ],
+                    outcomes: {
+                        result_pass_antibody: {
+                            status: 'pass',
+                            title: '✅ 符合規定 (憑檢驗)',
+                            desc: '請繳交水痘抗體檢驗報告 (陽性)。'
+                        },
+                        result_pass_vax: {
+                            status: 'pass',
+                            title: '✅ 符合規定 (憑紀錄)',
+                            desc: '請繳交水痘疫苗接種紀錄影本 (如黃卡)。'
+                        },
+                        result_action: {
+                            status: 'action',
+                            title: '💉 需完成兩劑疫苗接種',
+                            desc: '若無抗體資料或抗體為陰性，請務必至醫院「完成兩劑水痘疫苗注射」並繳交證明。注意：完成疫苗接種後，不須再抽血檢驗抗體。'
+                        }
+                    }
+                },
+                {
+                    id: 'mmr',
+                    title: '3. 麻疹、腮腺炎、德國麻疹 (MMR)',
+                    icon: <Shield className="w-6 h-6 text-rose-600" />,
+                    description: '規定：抗體陽性證明 或 完成 MMR 疫苗接種。',
+                    color: 'bg-rose-50 border-rose-200',
+                    logic: [
+                        {
+                            id: 'q1',
+                            text: '請問您是否有 MMR 的「抗體陽性證明」？',
+                            subtext: '麻疹、腮腺炎、德國麻疹抗體',
+                            options: [
+                                { label: '有，我有抗體陽性報告', next: 'result_pass_antibody', type: 'success' },
+                                { label: '沒有 / 不確定', next: 'q2', type: 'neutral' }
+                            ]
+                        },
+                        {
+                            id: 'q2',
+                            text: '那您是否有完成 MMR 疫苗的「接種紀錄」？',
+                            subtext: '通常記載於黃卡，需完整接種',
+                            options: [
+                                { label: '有，我有疫苗接種紀錄', next: 'result_pass_vax', type: 'success' },
+                                { label: '沒有紀錄 / 找不到', next: 'result_action', type: 'warning' }
+                            ]
+                        }
+                    ],
+                    outcomes: {
+                        result_pass_antibody: {
+                            status: 'pass',
+                            title: '✅ 符合規定 (憑抗體)',
+                            desc: '請繳交 MMR 抗體陽性檢驗報告。'
+                        },
+                        result_pass_vax: {
+                            status: 'pass',
+                            title: '✅ 符合規定 (憑疫苗)',
+                            desc: '請繳交 MMR 疫苗接種紀錄證明 (如黃卡影本)。'
+                        },
+                        result_action: {
+                            status: 'action',
+                            title: '💉 建議補接種或驗抗體',
+                            desc: '若無抗體也無紀錄，請選擇：1. 至醫院補打 MMR 疫苗並繳交證明 (最快速) 或 2. 抽血檢驗抗體 (若陰性仍需補打)。'
+                        }
+                    }
+                },
+                {
+                    id: 'flu',
+                    title: '4. 流感疫苗 (Influenza)',
+                    icon: <Thermometer className="w-6 h-6 text-orange-600" />,
+                    description: '規定：一年內流感疫苗注射接種證明。',
+                    color: 'bg-orange-50 border-orange-200',
+                    logic: [
+                        {
+                            id: 'q1',
+                            text: '請問您在「最近一年內」是否接種過流感疫苗？',
+                            subtext: '通常每年 10 月後開始施打',
+                            options: [
+                                { label: '有，我有接種證明', next: 'result_pass', type: 'success' },
+                                { label: '沒有 / 超過一年', next: 'result_action', type: 'warning' }
+                            ]
+                        }
+                    ],
+                    outcomes: {
+                        result_pass: {
+                            status: 'pass',
+                            title: '✅ 符合規定',
+                            desc: '請影印並繳交一年內的流感疫苗接種證明 (如健保卡貼紙、黃卡紀錄或診所證明)。'
+                        },
+                        result_action: {
+                            status: 'action',
+                            title: '💉 建議施打疫苗',
+                            desc: '建議您至醫療院所施打流感疫苗，並索取接種證明影本繳交，以提升實習期間的保護力。'
+                        }
+                    }
+                },
+                {
+                    id: 'covid',
+                    title: '5. COVID-19 疫苗',
+                    icon: <QrCode className="w-6 h-6 text-indigo-600" />,
+                    description: '規定：需出示疫苗接種紀錄 (黃卡/數位證明)。',
+                    color: 'bg-indigo-50 border-indigo-200',
+                    logic: [
+                        {
+                            id: 'q1',
+                            text: '請問您是否已完成 COVID-19 疫苗基礎劑接種，或依醫院規定完成追加劑？',
+                            subtext: '請確認實習醫院的具體劑次規定',
+                            options: [
+                                { label: '是，已完成並有證明', next: 'result_pass', type: 'success' },
+                                { label: '否 / 劑數不足', next: 'result_action', type: 'warning' }
+                            ]
+                        }
+                    ],
+                    outcomes: {
+                        result_pass: {
+                            status: 'pass',
+                            title: '✅ 符合規定',
+                            desc: '請檢附下列任一證明文件 (需日期清楚)：疫苗接種紀錄卡 (小黃卡) 影本、健保卡影本 (含貼紙)、健康護照 (需有日期) 或疫苗注射證明書。'
+                        },
+                        result_action: {
+                            status: 'action',
+                            title: '💉 需補接種或填寫同意書',
+                            desc: (
+                                <span>
+                                若未滿 3 劑，請盡速至合約院所完成接種。若因故無法施打，請至
+                                <a 
+                                    href="https://web.mkc.edu.tw/Site/nurse?Sn=MBHiytlqYU%2fRcBhMM9mW3hjYrGZRd00%2ff8L3xHzbeAM%3d&%E5%AF%A6%E7%BF%92%E9%AB%94%E6%AA%A2%E8%A6%8F%E5%AE%9A" 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="text-blue-400 underline hover:text-blue-300 mx-1 font-bold"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    護理科網站
+                                </a>
+                                請家長填寫「拒打COVID-19同意書」。
+                                </span>
+                            )
+                        }
+                    }
+                },
+                {
+                    id: 'xray',
+                    title: '6. 胸部 X 光 (Chest X-Ray)',
+                    icon: <FileText className="w-6 h-6 text-purple-600" />,
+                    description: '規定：一年內之胸部X光報告。',
+                    color: 'bg-purple-50 border-purple-200',
+                    logic: [
+                        {
+                            id: 'q1',
+                            text: '請問您是否有「最近 1 年內」的胸部 X 光報告？',
+                            subtext: '報告需有醫師判讀結果 (無活動性肺結核)',
+                            options: [
+                                { label: '有，且報告結果正常', next: 'result_pass', type: 'success' },
+                                { label: '有，但報告異常', next: 'result_followup', type: 'warning' },
+                                { label: '沒有，或是超過 1 年', next: 'result_do_now', type: 'info' }
+                            ]
+                        }
+                    ],
+                    outcomes: {
+                        result_pass: {
+                            status: 'pass',
+                            title: '✅ 符合規定',
+                            desc: '請繳交 1 年內的 X 光報告影本 (需有放射科醫師判讀結果)。'
+                        },
+                        result_followup: {
+                            status: 'pass',
+                            title: '✅ 請繳交檢驗報告',
+                            desc: '請直接影印並繳交該份 X 光報告即可。'
+                        },
+                        result_do_now: {
+                            status: 'test',
+                            title: '🗓️ 將統一安排檢查',
+                            desc: '實習組會統一於實習前安排胸部 X 光檢查，請不用自行前往醫院，並留意班級相關通知。'
+                        }
+                    }
+                }
+            ];
+
+            const handleCategorySelect = (category) => {
+                setActiveCategory(category);
+                setInteraction({
+                    categoryId: category.id,
+                    stepId: category.logic[0].id,
+                    history: []
+                });
+            };
+
+            const handleOptionClick = (option) => {
+                if (activeCategory.outcomes[option.next]) {
+                    setResults({
+                        ...results,
+                        [activeCategory.id]: activeCategory.outcomes[option.next]
+                    });
+                    setInteraction(null);
+                    setActiveCategory(null);
+                } else {
+                    setInteraction({
+                        ...interaction,
+                        stepId: option.next,
+                        history: [...interaction.history, option.label]
+                    });
+                }
+            };
+
+            const resetAll = () => {
+                setResults({});
+                setActiveCategory(null);
+                setInteraction(null);
+            };
+
+            // Render Functions
+            const renderHome = () => (
+                <div className="space-y-6">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h2 className="text-xl font-bold text-slate-800 mb-2">👋 醫院實習體檢檢核表</h2>
+                        <p className="text-slate-600 mb-4">
+                            請依照下方 6 大項目進行自我檢核，完成後系統將協助您整理「繳交文件清單」。
+                        </p>
+                        <div className="flex items-start gap-2 bg-blue-50 text-blue-700 p-3 rounded-lg text-sm">
+                            <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                            <p>資料來源：依據最新醫院實習體檢規定彙整。</p>
+                        </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {categories.map((cat) => {
+                            const result = results[cat.id];
+                            return (
+                                <div
+                                    key={cat.id}
+                                    onClick={() => handleCategorySelect(cat)}
+                                    role="button"
+                                    tabIndex={0}
+                                    className={`cursor-pointer text-left p-5 rounded-xl border-2 transition-all relative overflow-hidden group
+                                        ${result 
+                                        ? 'border-slate-200 bg-slate-50 opacity-80' 
+                                        : 'border-white bg-white hover:border-blue-300 shadow-sm hover:shadow-md'
+                                        }`}
+                                >
+                                    <div className="flex items-start justify-between mb-2">
+                                        <div className={`p-2 rounded-lg ${cat.color} group-hover:scale-110 transition-transform`}>
+                                            {cat.icon}
+                                        </div>
+                                        {result && (
+                                            <span className={`text-xs px-2 py-1 rounded-full font-bold flex items-center gap-1
+                                                ${result.status === 'pass' ? 'bg-green-100 text-green-700' : 
+                                                result.status === 'action' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                {result.status === 'pass' ? <CheckCircle className="w-3 h-3"/> : <AlertCircle className="w-3 h-3"/>}
+                                                判定完成
+                                            </span>
+                                        )}
+                                    </div>
+                                    <h3 className="font-bold text-lg text-slate-800">{cat.title}</h3>
+                                    <div className="text-sm text-slate-500 mt-1 line-clamp-2">
+                                        {result ? result.desc : cat.description}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {Object.keys(results).length > 0 && (
+                        <div className="mt-8 bg-slate-800 text-white p-6 rounded-xl shadow-lg">
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                                <FileText className="w-5 h-5" />
+                                您的個人化繳交清單
+                            </h3>
+                            <div className="space-y-3">
+                                {Object.keys(results).map(key => {
+                                    const cat = categories.find(c => c.id === key);
+                                    const res = results[key];
+                                    return (
+                                        <div key={key} className="flex gap-3 items-start bg-slate-700/50 p-3 rounded-lg">
+                                            <div className="mt-1">
+                                                {res.status === 'pass' ? <CheckCircle className="text-green-400 w-5 h-5"/> : 
+                                                res.status === 'action' ? <Syringe className="text-amber-400 w-5 h-5"/> : 
+                                                <Activity className="text-blue-400 w-5 h-5"/>}
+                                            </div>
+                                            <div>
+                                                <span className="font-bold text-slate-200 block text-sm mb-1">{cat.title}</span>
+                                                <div className="text-sm text-slate-300">{res.desc}</div>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                            <button 
+                                onClick={resetAll}
+                                className="mt-6 w-full py-2 bg-slate-600 hover:bg-slate-500 rounded-lg text-sm text-slate-200 flex items-center justify-center gap-2 transition-colors"
+                            >
+                                <RefreshCcw className="w-4 h-4" /> 重新開始 / 清除紀錄
+                            </button>
+                        </div>
+                    )}
+                </div>
+            );
+
+            const renderInteraction = () => {
+                const currentQ = activeCategory.logic.find(q => q.id === interaction.stepId);
+                
+                return (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in">
+                        <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden">
+                            <div className={`p-4 ${activeCategory.color} flex items-center justify-between`}>
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1 bg-white/50 rounded-lg">{activeCategory.icon}</div>
+                                    <h3 className="font-bold text-slate-800">{activeCategory.title}</h3>
+                                </div>
+                                <button 
+                                    onClick={() => setActiveCategory(null)}
+                                    className="p-1 hover:bg-black/10 rounded-full transition-colors"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                            
+                            <div className="p-6">
+                                <div className="mb-6">
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">
+                                        Question
+                                    </span>
+                                    <h4 className="text-xl font-bold text-slate-800 mb-2 leading-snug">
+                                        {currentQ.text}
+                                    </h4>
+                                    {currentQ.subtext && (
+                                        <p className="text-slate-500 text-sm bg-slate-50 p-2 rounded-lg inline-block">
+                                            ℹ️ {currentQ.subtext}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div className="space-y-3">
+                                    {currentQ.options.map((opt, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => handleOptionClick(opt)}
+                                            className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all flex items-center justify-between group"
+                                        >
+                                            <span className="text-slate-700 font-medium">{opt.label}</span>
+                                            <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500" />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <div className="p-4 bg-slate-50 text-xs text-center text-slate-400 border-t border-slate-100">
+                                護理科實習組 關心您
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-100 font-sans text-slate-900 pb-10">
+                    {/* Header */}
+                    <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+                        <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-center">
+                            <div className="flex items-center gap-2">
+                                <div className="bg-blue-600 text-white p-2 rounded-lg">
+                                    <Shield className="w-5 h-5" />
+                                </div>
+                                <h1 className="text-lg font-bold text-slate-800">新生實習體檢導航</h1>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Main Content */}
+                    <main className="max-w-md mx-auto px-4 py-6">
+                        {renderHome()}
+                        {activeCategory && interaction && renderInteraction()}
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<HealthCheckGuide />);
+    </script>
+</body>
+</html>
